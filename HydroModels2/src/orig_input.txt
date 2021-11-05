@@ -1,0 +1,213 @@
+/*
+Autor: Marcus Bruno Fernandes Silva (marcusbfs@gmail.com)
+#######################################################################################
+
+# OBS: O ARQUIVO NAO PODE CONTER ACENTOS!
+
+Arquivo de entrada para o HydroModels
+
+Aqui, sao declaradas as seguintes seccoes:
+
+VARIABLES: declara as variaveis que serao encontradas por meio da solucao de equacoes
+
+INPUT: Especificacoes e equacoes que sao usadas por todos os modelos.
+
+OUTPUT: Indica quais variaveis serao mostradas na tela 
+
+MODEL: Descricao matematica do modelo por meio da equacoes.
+
+#######################################################################################
+*/
+VARIABLES 
+{
+   # as variaveis sao iniciadas com limite superior e inferior
+   # isso ajuda na convergencia das equacoes
+    dP( DEFAULT=70e5, LOWER=2e5, UPPER=150e5 );  # queda de pressao, em pascal
+    Dc( DEFAULT=15E-2, LOWER=0.7e-2, UPPER=20e-2 ); # diametro da parte cilindrica, metros
+    Du( DEFAULT=3E-2, LOWER=1.e-4, UPPER=7e-2) ; # diametro do underflow, metros
+} 
+
+INPUT { # Todos os parametros declarados aqu isao usados pelos modelos abaixo. O modelo pode sobrescrever o parametro declarando-o novamente
+    n = 1; # numero de hidrociclones inicial
+    nmax =1; # numero maximo de hidrociclones para realizar os calculos em paralelo
+    Q = 220/3600; # vazao, m3/s
+    Qi = Q/n; # vazao alimentada individualmente a cada hidrociclone, m3/s
+    rho = 1000; # densidade do liquido, kg/m3
+    rho_s = 1380; # densidade do solido, kg/m3
+    mu = 1e-3; # viscosidade do liquido, Pa.s
+    dprime50 = 11e-6; # diametro de corte reduzido, metros
+    Rf = 0.1; # razao de liquido. (agua underflow)/(agua entrando)
+    c = 0.03; # concentraco massica dos solidos na alimentacao em fracao
+
+    # relacoes geometricas do hidrociclone:
+    Di_Dc = 0.28;
+    Do_Dc = 0.34;
+    L_Dc = 5.0;
+    l_Dc = 0.4;
+
+    Do = Dc *Do_Dc; # diametro do overflow, metros
+    Di = Dc *Di_Dc; # diametro da entrada, metros
+    L = Dc *L_Dc; 
+    l = Dc *l_Dc;
+    angle = 12.0; # angulo da parte cilindrica
+    
+    # derivados basicos
+    g = 9.81; # constante gravitacional, m/s2
+    Cv = (c * rho) / (rho_s - c * (rho_s - rho)); # concentracao volumetrica dos solidos na entrada
+    v = 4.0 * Qi /(pi*Dc*Dc); # velocidade superficial na parte cilindrica
+    Re = v * Dc * rho / mu; # numero de Reynolds, considerando diametro da parte cilindrica
+    Eu_def = dP/(rho*v*v*0.5); # definicao do adimensional de Euler
+    rho_p = rho / (1. - c * (1. - rho / rho_s)); # densidade da "lama" (slurry) de entrada
+    S = Rf / (1. - Rf);
+    H = dP / (rho * 9.81); # queda de pressao em metros
+    Power = dP * Qi ;# potencia, Watts
+
+    # converter unidades. Algums modelos exigem diferentes unidades
+    dP_kPa = dP*1e-3;
+    Dc_cm = Dc*100;
+    Du_cm = Du*100;
+    Di_cm = Di*100;
+    Do_cm = Do*100;
+    L_cm = L*100;
+    l_cm = l*100;
+    Qi_Lmin = Qi*60e3;
+    rho_gcm3 = rho*1e-3;
+    rho_s_gcm3 = rho_s*1e-3;
+    rho_p_gcm3 = rho_p*1e-3;
+    mu_cP = mu*1000;
+    dprime50_microns = dprime50*1e6;
+    Cv_percent = Cv*100;
+}
+
+OUTPUT # essa secao e responsavel pelos resultados.
+{
+    # nome das colunas que serao mostradas
+    HEADER = "Num. hydros.", "dP [bar]", "dP [psi]",  "Dc [cm]", "Du [cm]", "Eu [-]", "Vel. [m/s]";
+    # valores das colunas que serao mostradas
+    VALUES = n, dP, dP, Dc, Du, Eu_def, v;
+    # multiplicadores das colunas. util para converter unidades
+    MUL = 1, 1e-5, 1/6894.7572931783 /* Pascal para psi */, 1e2, 1e2, 1, 1;
+}
+
+# Declaracao de modelos
+MODEL "Svarovsky (1987)" {
+    PARAMETERS 
+    {
+        Eu_cor = 371.5 * Re^0.116 * exp(-Cv*2.12);
+        StkPrimeEu = 0.0474*(ln((1./Rf)))^( 0.742) * exp(Cv*8.96);
+        StkPrime = dprime50^2 * (rho_s-rho)*v/(18 * mu *Dc);
+    }
+
+    EQUATIONS
+    {
+        Eu_cor = Eu_def;
+        StkPrimeEu = Eu_def*StkPrime;
+        Rf = 1218. * (Du / Dc)^4.75 * Eu_cor^ (-0.3);
+    }
+
+} # end of Svarovsky model
+
+MODEL "Coelho e Medronho (2001)" {
+    PARAMETERS
+    {
+        Eu_cor = 43.5 * Dc^0.57 * (1.0 / Di_Dc )^2.61 * pow(Dc / (Do * Do + Du * Du),0.42) * pow(Dc / (L - l), 0.98) * Re^ 0.12 * exp(-0.51 * Cv);
+        Stk50Eu_def = pi * (rho_s - rho) * dP * Dc * dprime50 * dprime50 / (36. * mu * rho * Qi);
+        Stk50Eu_cor = .12 * (1. / Do_Dc)^0.95 * pow(Dc / (L - l), 1.33) * ln(1. / Rf)^ 0.79 * exp(12. * Cv);
+    }
+
+    EQUATIONS
+    {
+        Stk50Eu_cor = Stk50Eu_def;
+        Eu_cor = Eu_def;
+        Rf = 1.18 * (1. / Do_Dc)^5.97 * (Du / Dc)^ 3.1 * Eu_cor^(-0.54);
+    }
+
+} # end of Coelho 2001 model
+
+MODEL "Plitt (1976)" {
+    PARAMETERS
+    {
+    }
+
+    EQUATIONS
+    {
+        dprime50_microns = 50.5 * Dc_cm^0.46 * Di_cm^0.6 * Do_cm^ 1.21 * mu_cP^ 0.5 * exp(0.063 * Cv_percent) / (Du_cm^ 0.71 * (L_cm - l_cm)^0.38 * Qi_Lmin^ 0.45 * (rho_s_gcm3 - rho_gcm3)^0.5);
+        dP_kPa = 1.88 * Qi_Lmin^ 1.78 * exp(Cv_percent * 0.0055) / (Dc_cm^ 0.37 * Di_cm^ 0.94 * (L_cm - l_cm)^0.28 * (Du_cm * Du_cm + Do_cm * Do_cm)^0.87);
+        S =  1.9 * (Du_cm / Do_cm)^ 3.31 * (L_cm - l_cm)^0.54 * (Du_cm * Du_cm + Do_cm * Do_cm)^ 0.36 * exp(Cv_percent * 0.0054) /(H^ 0.24 * Dc_cm^ 1.11);
+    }
+} # end of plitt model
+
+MODEL "Plitt - Flintoff version (1987)" {
+    PARAMETERS
+    {
+     F1 = 1.0;
+     F2 = 1.0;
+     F3 = 1.0;
+     F4 = 1.0;
+     k = .5;
+     m = F2* 1.94 * pow(Dc_cm*Dc_cm*(L_cm - l_cm)/Qi_Lmin, .15) * exp(-1.58*S/(1+S));
+    }
+
+    EQUATIONS
+    {
+        dprime50_microns = F1 * 39.7 * Dc_cm^0.46 * Di_cm^0.6 * Do_cm^ 1.21 * mu_cP^ 0.5 * exp(0.063 * Cv_percent) / (Du_cm^ 0.71 * (L_cm - l_cm)^0.38 * Qi_Lmin^ 0.45 * ((rho_s_gcm3-1)/1.6)^k);
+        dP_kPa = F3* 1.88 * Qi_Lmin^ 1.8 * exp(Cv_percent * 0.0055) / (Dc_cm^ 0.37 * Di_cm^ 0.94 * (L_cm - l_cm)^0.28 * (Du_cm * Du_cm + Do_cm * Do_cm)^0.87);
+        S =  F4* rho_p_gcm3^.24 * (Du_cm / Do_cm)^ 3.31 * (L_cm - l_cm)^0.54 * (Du_cm * Du_cm + Do_cm * Do_cm)^ 0.36 * exp(Cv_percent * 0.0054) /(H^ 0.24 * Dc_cm^ 1.11);
+    }
+} # end of plitt model flintoff mod
+
+
+MODEL "Nageswararao (1978)" {
+    PARAMETERS
+    {
+        KQ0 = 1.0;
+        KD0 = 1.0;
+        KW0 = 1.0;
+        lambda_Nageswararaoa = 8.05*10^(1.82*Cv)/(pow(1-Cv, 2));
+        lambda_richardson = 8.05*pow(1-Cv, 2.39);
+        lambda = lambda_Nageswararaoa;
+        #lambda = lambda_richardson;
+    }
+
+    EQUATIONS
+    {
+        Qi_Lmin / (Dc_cm*Dc_cm*(dP_kPa/rho_p_gcm3)^0.5) = KQ0* pow(Dc_cm,-.1)*Do_Dc^.68 * Di_Dc^.45 * L_Dc^.2 * pow(angle, -.1);
+        dprime50_microns / Dc_cm = KD0 * pow(Dc_cm, -.65) *Do_Dc^.52 *(Du/Dc)^(-.5)*Di_Dc^.2*L_Dc^.2 * angle^.15 * pow( dP_kPa/ (rho_p_gcm3 * g * Dc_cm),-.22) * lambda^.93;
+        Rf = KW0 * Do_Dc^(-1.19) * pow(Du/Dc, 2.4) * Di_Dc^(-.5) * L_Dc^.22 * pow(angle, -.24) * pow(dP_kPa/(rho_p_gcm3 * g *Dc_cm), -.53)*lambda ^ .27;
+    }
+
+} # end of Nageswararao  model
+
+
+/* comenta o modelo inteiro. Isso significa que o modelo de Asoma nao sera executado
+MODEL "Asomah and Napier-Munn (1996)" {
+    PARAMETERS
+    {
+        P40 = 40e-4; # size 40% feed material passing, cm
+        P80 = .2; # size 80% feed material passing, cm
+        vi = Qi * 4 / (pi * Di*Di); # inlet velocity, m/s
+        Vs = Cv; # feed volume fraction of solids
+        incl = 0.0 ; #cyclone inclination from vertical
+        A = angle; # cone angle
+        B1 = 1.0;
+        B2 = 1.0;
+        B3 = 1.0;
+        B4 = 1.0;
+        B5 = 1.0;
+        Qi_m3h = Qi*3600;
+        rho_p_kgL = rho_p * 1e-3;
+        Re_AN = vi * Dc * (rho_s - rho_p)/mu;
+    }
+
+    EQUATIONS
+    {
+        dprime50_microns = B1 * Dc_cm^.229 * pow(P40/Do_cm, -.457) * pow(Do/Du, .948) * pow(1- Vs^(1-incl/180), -2.941) * pow(Re_AN, -.155) * pow(A, .719) * exp(-1.392 * incl/180);
+        Rf = B2*Dc_cm ^.471 * pow(P40/Do_cm, .214) * pow(1-Vs, -.825) * pow(Do/Du, -1.806) * L_Dc^.287 * pow(Re_AN, -.175) * pow(A, -.478) * exp(-1.357*incl/180);
+        dP_kPa = B4*Qi_m3h*Qi_m3h * pow(Dc_cm, -1.478) * rho_p_kgL * pow(1- Vs, .435) * pow(Di_cm *Do_cm, -1.538) * pow(L_Dc, -.455);
+    }
+} # end of model
+# */
+
+
+
+END

@@ -30,7 +30,7 @@ rápida visualização.
   sistematizado.
 
 
-### Contato
+## Contato
 
 Qualquer dúvida sobre a utilização ou sobre o código, e também sugestões de melhoria ou
 funcionalidade, sinta-se livre para entrar em contato :)

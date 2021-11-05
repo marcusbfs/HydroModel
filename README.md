@@ -5,7 +5,7 @@ variáveis. Desenvolvido principalmente para auxiliar no projeto de hidrociclone
 
 ## Utilização
 
-Para usar a interface gráfica, baixe o arquivo _hydromodel.zip_ disponível na
+Para usar a interface gráfica, baixe o arquivo _HydroModel_winx64.zip_ disponível na
 [página de releases](https://github.com/marcusbfs/HydroModel/releases) e descompacte-o.
 
 Feito isto, execute o programa _HydroModelsGUI.exe_, que é a interface gráfica por onde
